@@ -1,5 +1,6 @@
 build/
 bin/
 src/*.spv
+assets/shaders/*.spv
 *.o
 *.a

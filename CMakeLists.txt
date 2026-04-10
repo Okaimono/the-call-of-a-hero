@@ -9,6 +9,7 @@ target_include_directories(coah-engine PRIVATE
     ${Vulkan_INCLUDE_DIRS}
     /usr/include/glm
 )
+target_include_directories(coah-engine PRIVATE include)
 target_link_libraries(coah-engine
     glfw
     ${Vulkan_LIBRARIES}
