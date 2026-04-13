@@ -8,6 +8,7 @@
 #include "world/world.hpp"
 #include "vulkan/vulkan_context.hpp"
 #include "vulkan/swapchain.hpp"
+#include "vulkan/pool_allocator.hpp"
 
 class App {
 public:
@@ -22,6 +23,7 @@ private:
     GLFWwindow* window = nullptr;
     VulkanContext ctx;
     Swapchain swapchain;
+    PoolAllocator allocator;
     World world;
     Camera camera;
 
@@ -48,6 +50,9 @@ private:
     VkImageView textureImageView  = VK_NULL_HANDLE;
     VkSampler textureSampler      = VK_NULL_HANDLE;
 
+    VkBuffer testBuffer;
+    Allocation testAllocation;
+
     void initWindow() {
         glfwInit();
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -59,6 +64,7 @@ private:
     }
 
     void initVulkan() {
+
         world.generateWorld(Config::RENDER_RADIUS);
         ctx.init(window);
         swapchain.init(ctx);
@@ -69,11 +75,54 @@ private:
         createTexture();
         uploadChunkMeshes();
         uploadEntityMesh();
+        createTestObject();
         createCommandBuffers();
         createSyncObjects();
         createUniformBuffer();
         createDescriptorPool();
         createDescriptorSet();
+    }
+
+    void createTestObject() {
+        ChunkMesh testData = world.entity.createMesh();
+        allocator.init(&ctx);
+
+        VkDeviceSize size = testData.vertices.size() * sizeof(Vertex);
+
+        // STAGING BUFFER
+        Allocation hostAllocation = allocator.allocateHost(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+        VkBuffer staging = VK_NULL_HANDLE;
+        VkBufferCreateInfo stagingInfo{};
+        stagingInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        stagingInfo.size = size;
+        stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        stagingInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        vkCreateBuffer(ctx.device, &stagingInfo, nullptr, &staging);
+        vkBindBufferMemory(ctx.device, staging, hostAllocation.memory, hostAllocation.offset);
+
+        void* data;
+        vkMapMemory(ctx.device, hostAllocation.memory, hostAllocation.offset, size, 0, &data);
+        memcpy(data, testData.vertices.data(), size);
+        vkUnmapMemory(ctx.device, hostAllocation.memory);
+
+        // VERTEX BUFFER
+        testAllocation = allocator.allocateDevice(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+        VkBufferCreateInfo vertexInfo{};
+        vertexInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        vertexInfo.size = size;
+        vertexInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        vertexInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        vkCreateBuffer(ctx.device, &vertexInfo, nullptr, &testBuffer);
+        vkBindBufferMemory(ctx.device, testBuffer, testAllocation.memory, testAllocation.offset);
+
+        // COPY
+        VkCommandBuffer cmd = ctx.beginOneTimeCommands();
+        VkBufferCopy copy{};
+        copy.size = size;
+        vkCmdCopyBuffer(cmd, staging, testBuffer, 1, &copy);
+        ctx.endOneTimeCommands(cmd);
+
+        vkDestroyBuffer(ctx.device, staging, nullptr);
     }
 
     void loop() {
@@ -119,15 +168,19 @@ private:
         App* app = (App*)glfwGetWindowUserPointer(window);
         Camera& cam = app->camera;
         if (cam.firstMouse) { cam.lastX = xpos; cam.lastY = ypos; cam.firstMouse = false; }
+
         float xoffset = (xpos - cam.lastX) * cam.sensitivity;
         float yoffset = (cam.lastY - ypos) * cam.sensitivity;
+
         cam.lastX = xpos; cam.lastY = ypos;
         cam.yaw += xoffset; cam.pitch += yoffset;
         cam.pitch = glm::clamp(cam.pitch, -89.0f, 89.0f);
+
         glm::vec3 dir;
         dir.x = cos(glm::radians(cam.yaw)) * cos(glm::radians(cam.pitch));
         dir.y = sin(glm::radians(cam.pitch));
         dir.z = sin(glm::radians(cam.yaw)) * cos(glm::radians(cam.pitch));
+
         cam.front = glm::normalize(dir);
     }
 
@@ -298,6 +351,7 @@ private:
         framebuffers.resize(swapchain.imageViews.size());
         for (size_t i = 0; i < swapchain.imageViews.size(); i++) {
             VkImageView attachments[] = { swapchain.imageViews[i], swapchain.depthImageView };
+
             VkFramebufferCreateInfo info{};
             info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
             info.renderPass = renderPass;
@@ -306,6 +360,7 @@ private:
             info.width = swapchain.extent.width;
             info.height = swapchain.extent.height;
             info.layers = 1;
+
             if (vkCreateFramebuffer(ctx.device, &info, nullptr, &framebuffers[i]) != VK_SUCCESS)
                 throw std::runtime_error("failed to create framebuffer");
         }
@@ -345,6 +400,7 @@ private:
         poolSizes[0].descriptorCount = 1;
         poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         poolSizes[1].descriptorCount = 1;
+
         VkDescriptorPoolCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         info.poolSizeCount = 2;
@@ -613,8 +669,18 @@ private:
             vkCmdDraw(cmd, chunk.vertexCount, 1, 0, 0);
         }
 
+        vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &identity);
+        VkBuffer testVbs[] = {testBuffer};
+        VkDeviceSize testOffsets[] = {0};
+        vkCmdBindVertexBuffers(cmd, 0, 1, testVbs, testOffsets);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+        vkCmdDraw(cmd, world.entity.vertexCount, 1, 0, 0);
+
+
         glm::mat4 entityModel = glm::translate(glm::mat4(1.0f), world.entity.position);
         vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &entityModel);
+
         VkBuffer entityVbs[] = {world.entity.vertexBuffer.buffer};
         VkDeviceSize entityOffsets[] = {0};
         vkCmdBindVertexBuffers(cmd, 0, 1, entityVbs, entityOffsets);
