@@ -43,6 +43,7 @@ public:
             float fy = y;
             float fz = z + worldPos.y * DEPTH;
 
+            // +Z (front)
             if (isAir(x, y, z+1)) {
                 mesh.vertices.push_back({{fx+0,fy+0,fz+1},{1,1,1},{0,0}});
                 mesh.vertices.push_back({{fx+1,fy+0,fz+1},{1,1,1},{1,0}});
@@ -51,6 +52,7 @@ public:
                 mesh.vertices.push_back({{fx+1,fy+1,fz+1},{1,1,1},{1,1}});
                 mesh.vertices.push_back({{fx+0,fy+1,fz+1},{1,1,1},{0,1}});
             }
+            // -Z (back)
             if (isAir(x, y, z-1)) {
                 mesh.vertices.push_back({{fx+1,fy+0,fz+0},{1,1,1},{0,0}});
                 mesh.vertices.push_back({{fx+0,fy+0,fz+0},{1,1,1},{1,0}});
@@ -59,37 +61,41 @@ public:
                 mesh.vertices.push_back({{fx+0,fy+1,fz+0},{1,1,1},{1,1}});
                 mesh.vertices.push_back({{fx+1,fy+1,fz+0},{1,1,1},{0,1}});
             }
+            // +X (right)
             if (isAir(x+1, y, z)) {
-                mesh.vertices.push_back({{fx+1,fy+0,fz+0},{1,1,1},{0,0}});
-                mesh.vertices.push_back({{fx+1,fy+0,fz+1},{1,1,1},{1,0}});
-                mesh.vertices.push_back({{fx+1,fy+1,fz+1},{1,1,1},{1,1}});
-                mesh.vertices.push_back({{fx+1,fy+0,fz+0},{1,1,1},{0,0}});
-                mesh.vertices.push_back({{fx+1,fy+1,fz+1},{1,1,1},{1,1}});
-                mesh.vertices.push_back({{fx+1,fy+1,fz+0},{1,1,1},{0,1}});
+                mesh.vertices.push_back({{fx+1,fy+0,fz+1},{1,1,1},{0,0}});
+                mesh.vertices.push_back({{fx+1,fy+0,fz+0},{1,1,1},{1,0}});
+                mesh.vertices.push_back({{fx+1,fy+1,fz+0},{1,1,1},{1,1}});
+                mesh.vertices.push_back({{fx+1,fy+0,fz+1},{1,1,1},{0,0}});
+                mesh.vertices.push_back({{fx+1,fy+1,fz+0},{1,1,1},{1,1}});
+                mesh.vertices.push_back({{fx+1,fy+1,fz+1},{1,1,1},{0,1}});
             }
+            // -X (left)
             if (isAir(x-1, y, z)) {
-                mesh.vertices.push_back({{fx+0,fy+0,fz+1},{1,1,1},{0,0}});
-                mesh.vertices.push_back({{fx+0,fy+0,fz+0},{1,1,1},{1,0}});
-                mesh.vertices.push_back({{fx+0,fy+1,fz+0},{1,1,1},{1,1}});
-                mesh.vertices.push_back({{fx+0,fy+0,fz+1},{1,1,1},{0,0}});
-                mesh.vertices.push_back({{fx+0,fy+1,fz+0},{1,1,1},{1,1}});
-                mesh.vertices.push_back({{fx+0,fy+1,fz+1},{1,1,1},{0,1}});
+                mesh.vertices.push_back({{fx+0,fy+0,fz+0},{1,1,1},{0,0}});
+                mesh.vertices.push_back({{fx+0,fy+0,fz+1},{1,1,1},{1,0}});
+                mesh.vertices.push_back({{fx+0,fy+1,fz+1},{1,1,1},{1,1}});
+                mesh.vertices.push_back({{fx+0,fy+0,fz+0},{1,1,1},{0,0}});
+                mesh.vertices.push_back({{fx+0,fy+1,fz+1},{1,1,1},{1,1}});
+                mesh.vertices.push_back({{fx+0,fy+1,fz+0},{1,1,1},{0,1}});
             }
+            // +Y (top)
             if (isAir(x, y+1, z)) {
-                mesh.vertices.push_back({{fx+0,fy+1,fz+0},{1,1,1},{0,0}});
-                mesh.vertices.push_back({{fx+0,fy+1,fz+1},{1,1,1},{1,0}});
-                mesh.vertices.push_back({{fx+1,fy+1,fz+1},{1,1,1},{1,1}});
-                mesh.vertices.push_back({{fx+0,fy+1,fz+0},{1,1,1},{0,0}});
-                mesh.vertices.push_back({{fx+1,fy+1,fz+1},{1,1,1},{1,1}});
-                mesh.vertices.push_back({{fx+1,fy+1,fz+0},{1,1,1},{0,1}});
+                mesh.vertices.push_back({{fx+0,fy+1,fz+1},{1,1,1},{0,0}});
+                mesh.vertices.push_back({{fx+1,fy+1,fz+1},{1,1,1},{1,0}});
+                mesh.vertices.push_back({{fx+1,fy+1,fz+0},{1,1,1},{1,1}});
+                mesh.vertices.push_back({{fx+0,fy+1,fz+1},{1,1,1},{0,0}});
+                mesh.vertices.push_back({{fx+1,fy+1,fz+0},{1,1,1},{1,1}});
+                mesh.vertices.push_back({{fx+0,fy+1,fz+0},{1,1,1},{0,1}});
             }
+            // -Y (bottom)
             if (isAir(x, y-1, z)) {
-                mesh.vertices.push_back({{fx+0,fy+0,fz+1},{1,1,1},{0,0}});
-                mesh.vertices.push_back({{fx+0,fy+0,fz+0},{1,1,1},{1,0}});
-                mesh.vertices.push_back({{fx+1,fy+0,fz+0},{1,1,1},{1,1}});
-                mesh.vertices.push_back({{fx+0,fy+0,fz+1},{1,1,1},{0,0}});
-                mesh.vertices.push_back({{fx+1,fy+0,fz+0},{1,1,1},{1,1}});
-                mesh.vertices.push_back({{fx+1,fy+0,fz+1},{1,1,1},{0,1}});
+                mesh.vertices.push_back({{fx+1,fy+0,fz+1},{1,1,1},{0,0}});
+                mesh.vertices.push_back({{fx+0,fy+0,fz+1},{1,1,1},{1,0}});
+                mesh.vertices.push_back({{fx+0,fy+0,fz+0},{1,1,1},{1,1}});
+                mesh.vertices.push_back({{fx+1,fy+0,fz+1},{1,1,1},{0,0}});
+                mesh.vertices.push_back({{fx+0,fy+0,fz+0},{1,1,1},{1,1}});
+                mesh.vertices.push_back({{fx+1,fy+0,fz+0},{1,1,1},{0,1}});
             }
         }
         return mesh;

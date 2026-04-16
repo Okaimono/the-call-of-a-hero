@@ -24,54 +24,59 @@ public:
 
     ChunkMesh createMesh() {
         ChunkMesh mesh;
-        float s = 0.5f; // half size — 50% of a block
-        float o = 0.25f; // offset to center it in the block
-        float x = position.x + o;
-        float y = position.y;
-        float z = position.z + o;
+        float s = 0.5f;
+        float o = 0.25f;
+        float x = o;
+        float y = 0;
+        float z = o;
 
-        // front
+        // +Z front
         mesh.vertices.push_back({{x+0,y+0,z+s},{0,1,0},{0,0}});
         mesh.vertices.push_back({{x+s,y+0,z+s},{0,1,0},{1,0}});
         mesh.vertices.push_back({{x+s,y+s,z+s},{0,1,0},{1,1}});
         mesh.vertices.push_back({{x+0,y+0,z+s},{0,1,0},{0,0}});
         mesh.vertices.push_back({{x+s,y+s,z+s},{0,1,0},{1,1}});
         mesh.vertices.push_back({{x+0,y+s,z+s},{0,1,0},{0,1}});
-        // back
+
+        // -Z back
         mesh.vertices.push_back({{x+s,y+0,z+0},{0,1,0},{0,0}});
         mesh.vertices.push_back({{x+0,y+0,z+0},{0,1,0},{1,0}});
         mesh.vertices.push_back({{x+0,y+s,z+0},{0,1,0},{1,1}});
         mesh.vertices.push_back({{x+s,y+0,z+0},{0,1,0},{0,0}});
         mesh.vertices.push_back({{x+0,y+s,z+0},{0,1,0},{1,1}});
         mesh.vertices.push_back({{x+s,y+s,z+0},{0,1,0},{0,1}});
-        // right
-        mesh.vertices.push_back({{x+s,y+0,z+0},{0,1,0},{0,0}});
-        mesh.vertices.push_back({{x+s,y+0,z+s},{0,1,0},{1,0}});
-        mesh.vertices.push_back({{x+s,y+s,z+s},{0,1,0},{1,1}});
-        mesh.vertices.push_back({{x+s,y+0,z+0},{0,1,0},{0,0}});
-        mesh.vertices.push_back({{x+s,y+s,z+s},{0,1,0},{1,1}});
-        mesh.vertices.push_back({{x+s,y+s,z+0},{0,1,0},{0,1}});
-        // left
-        mesh.vertices.push_back({{x+0,y+0,z+s},{0,1,0},{0,0}});
-        mesh.vertices.push_back({{x+0,y+0,z+0},{0,1,0},{1,0}});
-        mesh.vertices.push_back({{x+0,y+s,z+0},{0,1,0},{1,1}});
-        mesh.vertices.push_back({{x+0,y+0,z+s},{0,1,0},{0,0}});
-        mesh.vertices.push_back({{x+0,y+s,z+0},{0,1,0},{1,1}});
-        mesh.vertices.push_back({{x+0,y+s,z+s},{0,1,0},{0,1}});
-        // top
-        mesh.vertices.push_back({{x+0,y+s,z+0},{0,1,0},{0,0}});
-        mesh.vertices.push_back({{x+0,y+s,z+s},{0,1,0},{1,0}});
-        mesh.vertices.push_back({{x+s,y+s,z+s},{0,1,0},{1,1}});
-        mesh.vertices.push_back({{x+0,y+s,z+0},{0,1,0},{0,0}});
-        mesh.vertices.push_back({{x+s,y+s,z+s},{0,1,0},{1,1}});
-        mesh.vertices.push_back({{x+s,y+s,z+0},{0,1,0},{0,1}});
-        // bottom
-        mesh.vertices.push_back({{x+0,y+0,z+s},{0,1,0},{0,0}});
-        mesh.vertices.push_back({{x+0,y+0,z+0},{0,1,0},{1,0}});
-        mesh.vertices.push_back({{x+s,y+0,z+0},{0,1,0},{1,1}});
-        mesh.vertices.push_back({{x+0,y+0,z+s},{0,1,0},{0,0}});
-        mesh.vertices.push_back({{x+s,y+0,z+0},{0,1,0},{1,1}});
-        mesh.vertices.push_back({{x+s,y+0,z+s},{0,1,0},{0,1}});
+
+        // +X right
+        mesh.vertices.push_back({{x+s,y+0,z+s},{0,1,0},{0,0}});
+        mesh.vertices.push_back({{x+s,y+0,z+0},{0,1,0},{1,0}});
+        mesh.vertices.push_back({{x+s,y+s,z+0},{0,1,0},{1,1}});
+        mesh.vertices.push_back({{x+s,y+0,z+s},{0,1,0},{0,0}});
+        mesh.vertices.push_back({{x+s,y+s,z+0},{0,1,0},{1,1}});
+        mesh.vertices.push_back({{x+s,y+s,z+s},{0,1,0},{0,1}});
+
+        // -X left
+        mesh.vertices.push_back({{x+0,y+0,z+0},{0,1,0},{0,0}});
+        mesh.vertices.push_back({{x+0,y+0,z+s},{0,1,0},{1,0}});
+        mesh.vertices.push_back({{x+0,y+s,z+s},{0,1,0},{1,1}});
+        mesh.vertices.push_back({{x+0,y+0,z+0},{0,1,0},{0,0}});
+        mesh.vertices.push_back({{x+0,y+s,z+s},{0,1,0},{1,1}});
+        mesh.vertices.push_back({{x+0,y+s,z+0},{0,1,0},{0,1}});
+
+        // +Y top
+        mesh.vertices.push_back({{x+0,y+s,z+s},{0,1,0},{0,0}});
+        mesh.vertices.push_back({{x+s,y+s,z+s},{0,1,0},{1,0}});
+        mesh.vertices.push_back({{x+s,y+s,z+0},{0,1,0},{1,1}});
+        mesh.vertices.push_back({{x+0,y+s,z+s},{0,1,0},{0,0}});
+        mesh.vertices.push_back({{x+s,y+s,z+0},{0,1,0},{1,1}});
+        mesh.vertices.push_back({{x+0,y+s,z+0},{0,1,0},{0,1}});
+
+        // -Y bottom
+        mesh.vertices.push_back({{x+s,y+0,z+s},{0,1,0},{0,0}});
+        mesh.vertices.push_back({{x+0,y+0,z+s},{0,1,0},{1,0}});
+        mesh.vertices.push_back({{x+0,y+0,z+0},{0,1,0},{1,1}});
+        mesh.vertices.push_back({{x+s,y+0,z+s},{0,1,0},{0,0}});
+        mesh.vertices.push_back({{x+0,y+0,z+0},{0,1,0},{1,1}});
+        mesh.vertices.push_back({{x+s,y+0,z+0},{0,1,0},{0,1}});
 
         return mesh;
     }

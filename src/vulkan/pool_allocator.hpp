@@ -10,14 +10,28 @@ struct Allocation {
     VkDeviceSize   offset = 0;  // where you live in it
     VkDeviceSize   size;
 };
+
 class PoolAllocator {
 public:
-
     void init(VulkanContext* context);
+    
     Allocation allocateDevice(VkDeviceSize size, VkBufferUsageFlags usage);
     Allocation allocateHost(VkDeviceSize size, VkBufferUsageFlags usage);
+    void freeHost(Allocation& allocation);
+
+    VkDeviceSize getDeviceOffset() {
+        return deviceOffset;
+    }
 
 private:
+    struct FreeBlock {
+        VkDeviceSize offset;
+        VkDeviceSize size;
+    };
+    std::vector<FreeBlock> hostFreeList;
+
+    std::vector<Allocation> allocations;
+
     VulkanContext* ctx = nullptr;
 
     VkDeviceMemory deviceSlab;
@@ -27,3 +41,11 @@ private:
     VkDeviceSize hostOffset = 0;
 
 };
+
+/*
+Allocate an allocation on the vector.
+
+What we need:
+ - A allocation way, to add data, 
+ - A way to add up the position in the specific memory
+*/

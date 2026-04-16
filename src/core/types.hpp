@@ -1,5 +1,5 @@
 #pragma once
-#include "../vulkan_includes.hpp"
+#include "vulkan_includes.hpp"
 
 struct Vertex {
     glm::vec3 position;

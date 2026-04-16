@@ -10,6 +10,12 @@
 #include "vulkan/swapchain.hpp"
 #include "vulkan/pool_allocator.hpp"
 
+#include "coah/engine.hpp"
+
+// USE NVTOP FOR TRACKING COMPUTER USAGE
+
+// a year from now, i will work with claude.
+
 class App {
 public:
     void run() {
@@ -53,6 +59,14 @@ private:
     VkBuffer testBuffer;
     Allocation testAllocation;
 
+    struct VBO {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        Allocation allocation;
+        uint32_t vertexCount = 0;
+    };
+
+    std::vector<VBO> chunkVBOs;
+
     void initWindow() {
         glfwInit();
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -73,19 +87,77 @@ private:
         createPipeline();
         createFramebuffers();
         createTexture();
-        uploadChunkMeshes();
+        //uploadChunkMeshes();
         uploadEntityMesh();
+
+        allocator.init(&ctx);
+        pushChunks();
+
+
         createTestObject();
         createCommandBuffers();
         createSyncObjects();
         createUniformBuffer();
         createDescriptorPool();
         createDescriptorSet();
+        for (size_t i = 0; i < commandBuffers.size(); i++)
+            recordCommandBuffer(commandBuffers[i], i);
+    }
+
+    void pushChunks() {
+        for (auto& [coord, chunk] : world.chunks) {
+            chunkVBOs.emplace_back();
+            VBO& chunkVBO = chunkVBOs[chunkVBOs.size() - 1];
+
+            ChunkMesh mesh = chunk.createMesh(coord);
+            if (mesh.vertices.empty()) continue;
+
+            VkDeviceSize size = sizeof(mesh.vertices[0]) * mesh.vertices.size();
+
+            Allocation hostAllocation = allocator.allocateHost(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+            VkBuffer staging = VK_NULL_HANDLE;
+            VkBufferCreateInfo stagingInfo{};
+            stagingInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            stagingInfo.size = size;
+            stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+            stagingInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            vkCreateBuffer(ctx.device, &stagingInfo, nullptr, &staging);
+            vkBindBufferMemory(ctx.device, staging, hostAllocation.memory, hostAllocation.offset);
+
+            void* data;
+            vkMapMemory(ctx.device, hostAllocation.memory, hostAllocation.offset, size, 0, &data);
+            memcpy(data, mesh.vertices.data(), size);
+            vkUnmapMemory(ctx.device, hostAllocation.memory);
+
+            // VERTEX BUFFER
+
+
+            chunkVBO.allocation = allocator.allocateDevice(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+            VkBufferCreateInfo vertexInfo{};
+            vertexInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            vertexInfo.size = size;
+            vertexInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+            vertexInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            vkCreateBuffer(ctx.device, &vertexInfo, nullptr, &chunkVBO.buffer);
+            vkBindBufferMemory(ctx.device, chunkVBO.buffer, chunkVBO.allocation.memory, chunkVBO.allocation.offset);
+
+            VkCommandBuffer cmd = ctx.beginOneTimeCommands();
+            VkBufferCopy copy{};
+            copy.srcOffset = 0;
+            copy.dstOffset = 0;
+            copy.size = size;
+            vkCmdCopyBuffer(cmd, staging, chunkVBO.buffer, 1, &copy);
+            ctx.endOneTimeCommands(cmd);
+
+            vkDestroyBuffer(ctx.device, staging, nullptr);
+            allocator.freeHost(hostAllocation);
+
+            chunkVBO.vertexCount = static_cast<uint32_t>(mesh.vertices.size());
+        }
     }
 
     void createTestObject() {
         ChunkMesh testData = world.entity.createMesh();
-        allocator.init(&ctx);
 
         VkDeviceSize size = testData.vertices.size() * sizeof(Vertex);
 
@@ -118,11 +190,15 @@ private:
         // COPY
         VkCommandBuffer cmd = ctx.beginOneTimeCommands();
         VkBufferCopy copy{};
+        copy.srcOffset = hostAllocation.offset;
+        copy.dstOffset = 0;
         copy.size = size;
+
         vkCmdCopyBuffer(cmd, staging, testBuffer, 1, &copy);
         ctx.endOneTimeCommands(cmd);
 
         vkDestroyBuffer(ctx.device, staging, nullptr);
+        allocator.freeHost(hostAllocation);
     }
 
     void loop() {
@@ -147,7 +223,7 @@ private:
         if (timer >= 1.0f) {
             timer = 0.0f;
             world.entity.walk(Direction::NORTH);
-            uploadEntityMesh();
+            //uploadEntityMesh();
         }
     }
 
@@ -290,7 +366,7 @@ private:
         VkPipelineRasterizationStateCreateInfo raster{};
         raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         raster.polygonMode = VK_POLYGON_MODE_FILL;
-        raster.cullMode = VK_CULL_MODE_NONE;
+        raster.cullMode = VK_CULL_MODE_BACK_BIT;
         raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         raster.lineWidth = 1.0f;
 
@@ -636,6 +712,66 @@ private:
         vkCreateFence(ctx.device, &fenceInfo, nullptr, &inFlight);
     }
 
+    // void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
+    //     VkCommandBufferBeginInfo begin{};
+    //     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    //     vkBeginCommandBuffer(cmd, &begin);
+
+    //     VkClearValue clearValues[2]{};
+    //     clearValues[0].color = {0.0f, 0.0f, 0.0f, 1.0f};
+    //     clearValues[1].depthStencil = {1.0f, 0};
+
+    //     VkRenderPassBeginInfo rpInfo{};
+    //     rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    //     rpInfo.renderPass = renderPass;
+    //     rpInfo.framebuffer = framebuffers[imageIndex];
+    //     rpInfo.renderArea.extent = swapchain.extent;
+    //     rpInfo.clearValueCount = 2;
+    //     rpInfo.pClearValues = clearValues;
+
+    //     vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+    //     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    //     // Identity matrix (for chunks)
+    //     glm::mat4 identity = glm::mat4(1.0f);
+    //     vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &identity);
+
+    //     for (auto& [coord, chunk] : world.chunks) {
+    //         if (chunk.vertexCount == 0) continue;
+    //         VkBuffer vbs[] = {chunk.vertexBuffer.buffer};
+    //         VkDeviceSize offsets[] = {0};
+    //         vkCmdBindVertexBuffers(cmd, 0, 1, vbs, offsets);
+    //         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+    //             pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+    //         vkCmdDraw(cmd, chunk.vertexCount, 1, 0, 0);
+    //     }
+
+    //     // Test matrix (for test model)
+    //     glm::mat4 testModel = glm::translate(glm::mat4(1.0f), world.entity.position);
+    //     vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &testModel);
+
+    //     // draw testBuffer (pool allocator version)
+    //     VkBuffer testVbs[] = {testBuffer};
+    //     VkDeviceSize testOffsets[] = {0};
+    //     vkCmdBindVertexBuffers(cmd, 0, 1, testVbs, testOffsets);
+    //     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+    //     vkCmdDraw(cmd, world.entity.vertexCount, 1, 0, 0);
+
+    //     // Entity matrix (for entity model)
+    //     glm::mat4 entityModel = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f)) * glm::translate(glm::mat4(1.0f), world.entity.position);
+    //     vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &entityModel);
+
+    //     VkBuffer entityVbs[] = {world.entity.vertexBuffer.buffer};
+    //     VkDeviceSize entityOffsets[] = {0};
+    //     vkCmdBindVertexBuffers(cmd, 0, 1, entityVbs, entityOffsets);
+    //     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+    //     vkCmdDraw(cmd, world.entity.vertexCount, 1, 0, 0);
+
+
+    //     vkCmdEndRenderPass(cmd);
+    //     vkEndCommandBuffer(cmd);
+    // }
+
     void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
         VkCommandBufferBeginInfo begin{};
         begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -649,6 +785,7 @@ private:
         rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         rpInfo.renderPass = renderPass;
         rpInfo.framebuffer = framebuffers[imageIndex];
+        rpInfo.renderArea.offset = {0, 0};
         rpInfo.renderArea.extent = swapchain.extent;
         rpInfo.clearValueCount = 2;
         rpInfo.pClearValues = clearValues;
@@ -656,36 +793,59 @@ private:
         vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-        glm::mat4 identity = glm::mat4(1.0f);
-        vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &identity);
+        vkCmdBindDescriptorSets(
+            cmd,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipelineLayout,
+            0,
+            1,
+            &descriptorSet,
+            0,
+            nullptr
+        );
 
-        for (auto& [coord, chunk] : world.chunks) {
-            if (chunk.vertexCount == 0) continue;
-            VkBuffer vbs[] = {chunk.vertexBuffer.buffer};
-            VkDeviceSize offsets[] = {0};
+        // Draw all chunk VBOs from the pool allocator path
+        glm::mat4 chunkModel = glm::mat4(1.0f);
+        vkCmdPushConstants(
+            cmd,
+            pipelineLayout,
+            VK_SHADER_STAGE_VERTEX_BIT,
+            0,
+            sizeof(glm::mat4),
+            &chunkModel
+        );
+
+        for (const VBO& chunkVBO : chunkVBOs) {
+            if (chunkVBO.buffer == VK_NULL_HANDLE || chunkVBO.vertexCount == 0) {
+                continue;
+            }
+
+            VkBuffer vbs[] = { chunkVBO.buffer };
+            VkDeviceSize offsets[] = { 0 };
+
             vkCmdBindVertexBuffers(cmd, 0, 1, vbs, offsets);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-            vkCmdDraw(cmd, chunk.vertexCount, 1, 0, 0);
+            vkCmdDraw(cmd, chunkVBO.vertexCount, 1, 0, 0);
         }
 
-        vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &identity);
-        VkBuffer testVbs[] = {testBuffer};
-        VkDeviceSize testOffsets[] = {0};
+        // Test matrix (for test model)
+        glm::mat4 testModel = glm::translate(glm::mat4(1.0f), world.entity.position);
+        vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &testModel);
+
+        VkBuffer testVbs[] = { testBuffer };
+        VkDeviceSize testOffsets[] = { 0 };
         vkCmdBindVertexBuffers(cmd, 0, 1, testVbs, testOffsets);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
         vkCmdDraw(cmd, world.entity.vertexCount, 1, 0, 0);
 
+        // Entity matrix (for entity model)
+        glm::mat4 entityModel =
+            glm::translate(glm::mat4(1.0f), glm::vec3(1.0f)) *
+            glm::translate(glm::mat4(1.0f), world.entity.position);
 
-        glm::mat4 entityModel = glm::translate(glm::mat4(1.0f), world.entity.position);
         vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &entityModel);
 
-        VkBuffer entityVbs[] = {world.entity.vertexBuffer.buffer};
-        VkDeviceSize entityOffsets[] = {0};
+        VkBuffer entityVbs[] = { world.entity.vertexBuffer.buffer };
+        VkDeviceSize entityOffsets[] = { 0 };
         vkCmdBindVertexBuffers(cmd, 0, 1, entityVbs, entityOffsets);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
         vkCmdDraw(cmd, world.entity.vertexCount, 1, 0, 0);
 
         vkCmdEndRenderPass(cmd);
@@ -697,10 +857,9 @@ private:
         vkResetFences(ctx.device, 1, &inFlight);
         uint32_t imageIndex;
         vkAcquireNextImageKHR(ctx.device, swapchain.swapchain, UINT64_MAX, imageAvailable, VK_NULL_HANDLE, &imageIndex);
-        vkResetCommandBuffer(commandBuffers[imageIndex], 0);
-        recordCommandBuffer(commandBuffers[imageIndex], imageIndex);
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
         VkSubmitInfo submit{};
         submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit.waitSemaphoreCount = 1;
@@ -769,8 +928,14 @@ private:
 };
 
 int main() {
-    App app;
-    try { app.run(); }
-    catch (const std::exception& e) { std::cerr << e.what() << std::endl; return 1; }
-    return 0;
+    // App app;
+    // try { app.run(); }
+    // catch (const std::exception& e) { std::cerr << e.what() << std::endl; return 1; }
+    // return 0;
+
+    Engine engine;
+    Application* application = new Application();
+    
+    engine.init(application);
+    engine.run();
 }

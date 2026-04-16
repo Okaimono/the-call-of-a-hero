@@ -36,6 +36,11 @@ Allocation PoolAllocator::allocateHost(VkDeviceSize size, VkBufferUsageFlags usa
     return allocation;
 }
 
+void PoolAllocator::freeHost(Allocation& allocation) {
+    if (allocation.memory != hostSlab) return;
+    hostOffset = 0;
+}
+
 // void PoolAllocator::pushMemory() {
 //     VkBuffer staging = VK_NULL_HANDLE;
 
