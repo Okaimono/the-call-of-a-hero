@@ -34,6 +34,12 @@ private:
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
         window = glfwCreateWindow(WIDTH, HEIGHT, "coah-engine", nullptr, nullptr);
+
+        glfwSetWindowUserPointer(window, &renderer);
+        glfwSetCursorPosCallback(window, [](GLFWwindow* w, double x, double y) {
+            ((Renderer*)glfwGetWindowUserPointer(w))->mouseCallback(w, x, y);
+        });
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     }
 
     void initVulkan() {
@@ -43,8 +49,14 @@ private:
     }
 
     void loop() {
+        float lastTime = 0.0f;
         while (!glfwWindowShouldClose(window)) {
+            float currentTime = glfwGetTime();
+            float dt = currentTime - lastTime;
+            lastTime = currentTime;
+
             glfwPollEvents();
+            renderer.processInput(window, dt);
             renderer.updateUniformBuffer();
             renderer.drawFrame();
         }
@@ -54,7 +66,6 @@ private:
     void cleanup() {
         renderer.cleanup();
         swapchain.cleanup(ctx);
-        renderer.cleanup();
         glfwDestroyWindow(window);
         glfwTerminate();
     }

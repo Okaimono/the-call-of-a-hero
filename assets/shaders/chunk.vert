@@ -1,23 +1,63 @@
-layout(location = 0) in uint packedData; // same binding
+#version 450
+
+layout(set = 0, binding = 0) uniform UBO {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+} ubo;
+
+layout(set = 0, binding = 1) readonly buffer FaceBuffer {
+    uint faces[];
+};
+
+layout(push_constant) uniform PushConstants {
+    mat4 model;
+} push;
+
+layout(location = 0) out vec2 fragUV;
 
 void main() {
-    float x = float(packedData & 0xF);
-    float y = float((packedData >> 4) & 0x1F);
-    float z = float((packedData >> 9) & 0xF);
-    uint  face = (packedData >> 13) & 0x7;
+    uint faceIdx = gl_VertexIndex / 6;
+    uint vi      = gl_VertexIndex % 6;
+    uint packed  = faces[faceIdx];
 
-    // local quad corners per face direction
+    float x    = float(packed & 0xF);
+    float y    = float((packed >> 4) & 0x1F);
+    float z    = float((packed >> 9) & 0xF);
+    uint  face = (packed >> 13) & 0x7;
+
     vec3 corners[4];
-    if (face == 0) { // Top
-        corners[0] = vec3(0,1,0);
-        corners[1] = vec3(1,1,0);
-        corners[2] = vec3(1,1,1);
-        corners[3] = vec3(0,1,1);
+    if (face == 0) {
+        corners[0] = vec3(0,1,0); corners[1] = vec3(1,1,0);
+        corners[2] = vec3(1,1,1); corners[3] = vec3(0,1,1);
+    } else if (face == 1) {
+        corners[0] = vec3(0,0,1); corners[1] = vec3(1,0,1);
+        corners[2] = vec3(1,0,0); corners[3] = vec3(0,0,0);
+    } else if (face == 2) {
+        corners[0] = vec3(0,1,0); corners[1] = vec3(0,0,0);
+        corners[2] = vec3(1,0,0); corners[3] = vec3(1,1,0);
+    } else if (face == 3) {
+        corners[0] = vec3(1,1,1); corners[1] = vec3(1,0,1);
+        corners[2] = vec3(0,0,1); corners[3] = vec3(0,1,1);
+    } else if (face == 4) {
+        corners[0] = vec3(1,1,0); corners[1] = vec3(1,0,0);
+        corners[2] = vec3(1,0,1); corners[3] = vec3(1,1,1);
+    } else {
+        corners[0] = vec3(0,1,1); corners[1] = vec3(0,0,1);
+        corners[2] = vec3(0,0,0); corners[3] = vec3(0,1,0);
     }
-    // etc for other faces...
 
-    uint vi = gl_VertexIndex % 6;
-    uint idx = uint[6](0,1,2,2,3,0)[vi];
-    vec3 pos = vec3(x,y,z) + corners[idx];
-    gl_Position = ubo.proj * ubo.view * vec4(pos, 1.0);
+    // declare indices FIRST before using it
+    uint indices[6] = uint[6](0,1,2,2,3,0);
+
+    vec2 uvCorners[4] = vec2[4](
+        vec2(0.0, 0.0),
+        vec2(16.0 / 512.0, 0.0),
+        vec2(16.0 / 512.0, 16.0 / 512.0),
+        vec2(0.0, 16.0 / 512.0)
+    );
+
+    fragUV      = uvCorners[indices[vi]];
+    vec3 pos    = vec3(x,y,z) + corners[indices[vi]];
+    gl_Position = ubo.proj * ubo.view * push.model * vec4(pos, 1.0);
 }
