@@ -5,25 +5,32 @@
 #include "swapchain.hpp"
 #include "core/types.hpp"
 #include "core/config.hpp"
+#include "vulkan/command_manager.hpp"
+#include "vulkan/pool_allocator.hpp"
+#include "camera.hpp"
+#include "game/world.hpp"
 
+#include <functional>
+#include <unordered_map>
 #include <glm/gtc/matrix_transform.hpp>
-
 
 class Renderer {
 public:
-    void init(VulkanContext* ctx, Swapchain* swapchain) {
+    void init(VulkanContext* ctx, Swapchain* swapchain, Camera* camera) {
         this->ctx = ctx;
         this->swapchain = swapchain;
+        this->camera = camera;
 
         createRenderPass();
+        allocator.init(ctx, &commandManager);
         createDescriptorSetLayout();
-        initChunk();
-        createSSBO();
         createPipeline();
         createDepthResources();
         createFramebuffers();
-        createCommandPool();        // must be before createTextureImage
-        createTextureImage();       // now commandPool exists
+        commandManager.init(ctx);
+        world.init();
+        createChunkSlots();
+        createTextureImage();
         createTextureImageView();
         createSampler();
         createUniformBuffer();
@@ -33,43 +40,10 @@ public:
         createSyncObjects();
     }
 
-    void processInput(GLFWwindow* window, float dt) {
-        float speed = 10.0f * dt;
-
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) camPos += speed * camFront;
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) camPos -= speed * camFront;
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) camPos -= glm::normalize(glm::cross(camFront, camUp)) * speed;
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) camPos += glm::normalize(glm::cross(camFront, camUp)) * speed;
-        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)      camPos += camUp * speed;
-        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) camPos -= camUp * speed;
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) glfwSetWindowShouldClose(window, true);
-    }
-
-    static void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
-        Renderer* r = (Renderer*)glfwGetWindowUserPointer(window);
-        static float lastX = WIDTH / 2.0f;
-        static float lastY = HEIGHT / 2.0f;
-        static bool first = true;
-        if (first) { lastX = xpos; lastY = ypos; first = false; }
-
-        float dx = (xpos - lastX) * 0.1f;
-        float dy = (lastY - ypos) * 0.1f;
-        lastX = xpos; lastY = ypos;
-
-        r->yaw   += dx;
-        r->pitch  = glm::clamp(r->pitch + dy, -89.0f, 89.0f);
-
-        r->camFront = glm::normalize(glm::vec3(
-            cos(glm::radians(r->yaw)) * cos(glm::radians(r->pitch)),
-            sin(glm::radians(r->pitch)),
-            sin(glm::radians(r->yaw)) * cos(glm::radians(r->pitch))
-        ));
-    }
-
     void updateUniformBuffer() {
         UniformBufferObject ubo{};
         ubo.model = glm::mat4(1.0f);
-        ubo.view  = glm::lookAt(camPos, camPos + camFront, camUp);
+        ubo.view = glm::lookAt(camera->position, camera->position + camera->front, camera->up);
         ubo.proj  = glm::perspective(glm::radians(60.0f), WIDTH / (float)HEIGHT, 0.1f, 1000.0f);
         ubo.proj[1][1] *= -1;
         memcpy(uniformMapped, &ubo, sizeof(ubo));
@@ -116,8 +90,8 @@ public:
         vkDestroyImageView(ctx->device, depthImageView, nullptr);
         vkDestroyImage(ctx->device, depthImage, nullptr);
         vkFreeMemory(ctx->device, depthMemory, nullptr);
-        vkDestroyBuffer(ctx->device, ssboBuffer, nullptr);
-        vkFreeMemory(ctx->device, ssboMemory, nullptr);
+        vkDestroyBuffer(ctx->device, allocator.ssboBuffer, nullptr);
+        vkFreeMemory(ctx->device, allocator.ssboMemory, nullptr);
         vkDestroyBuffer(ctx->device, uniformBuffer, nullptr);
         vkFreeMemory(ctx->device, uniformMemory, nullptr);
         vkDestroyDescriptorPool(ctx->device, descriptorPool, nullptr);
@@ -125,7 +99,7 @@ public:
         vkDestroySemaphore(ctx->device, imageAvailable, nullptr);
         vkDestroySemaphore(ctx->device, renderFinished, nullptr);
         vkDestroyFence(ctx->device, inFlight, nullptr);
-        vkDestroyCommandPool(ctx->device, commandPool, nullptr);
+        commandManager.cleanup();
         for (auto fb : framebuffers) vkDestroyFramebuffer(ctx->device, fb, nullptr);
         vkDestroyPipeline(ctx->device, pipeline, nullptr);
         vkDestroyPipelineLayout(ctx->device, pipelineLayout, nullptr);
@@ -137,8 +111,10 @@ private:
     VkPipelineLayout           pipelineLayout = VK_NULL_HANDLE;
     VkPipeline                 pipeline       = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> framebuffers;
-    VkCommandPool              commandPool    = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> commandBuffers;
+    CommandManager commandManager;
+    PoolAllocator allocator;
+    World world;
 
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
     VkSemaphore renderFinished = VK_NULL_HANDLE;
@@ -152,9 +128,6 @@ private:
     VkDeviceMemory uniformMemory = VK_NULL_HANDLE;
     void*          uniformMapped = nullptr;
 
-    VkBuffer       ssboBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory ssboMemory = VK_NULL_HANDLE;
-
     VkImage        depthImage     = VK_NULL_HANDLE;
     VkDeviceMemory depthMemory    = VK_NULL_HANDLE;
     VkImageView    depthImageView = VK_NULL_HANDLE;
@@ -166,51 +139,20 @@ private:
 
     VulkanContext* ctx      = nullptr;
     Swapchain*     swapchain = nullptr;
+    Camera*        camera    = nullptr;
 
-    std::vector<uint32_t> faces;
+    VkBuffer       texBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory texMemory = VK_NULL_HANDLE;
 
-    glm::vec3 camPos   = glm::vec3(40.0f, 35.0f, 40.0f);
-    glm::vec3 camFront = glm::normalize(glm::vec3(-1.0f, -0.5f, -1.0f));
-    glm::vec3 camUp    = glm::vec3(0.0f, 1.0f, 0.0f);
-    float yaw   = -135.0f;
-    float pitch = -20.0f;
-
-    // ─────────────────────────────────────────
-    //  Chunk
-    // ─────────────────────────────────────────
-
-    void initChunk() {
-        for (int x = 0; x < 16; x++) {
-            for (int y = 0; y < 32; y++) {
-                for (int z = 0; z < 16; z++) {
-                    for (int i = 0; i < 6; i++) {
-                        uint32_t data = 0;
-                        data |= (x & 0xF)  << 0;
-                        data |= (y & 0x1F) << 4;
-                        data |= (z & 0xF)  << 9;
-                        data |= (i & 0x7)  << 13;
-                        faces.push_back(data);
-                    }
-                }
-            }
+    void createChunkSlots() {
+        std::unordered_map<ChunkCoord, Chunk, ChunkCoordHash>& worldGrid = world.worldGrid;
+        for (auto& [key, value] : worldGrid) {
+            value.slot = allocator.reserveSlot();
+            
+            const std::vector<uint32_t>& data = value.faces;
+            allocator.updateSlot(value.slot, data);
         }
     }
-
-    void createSSBO() {
-        VkDeviceSize size = sizeof(uint32_t) * faces.size();
-        createBuffer(size,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            ssboBuffer, ssboMemory);
-        void* data;
-        vkMapMemory(ctx->device, ssboMemory, 0, size, 0, &data);
-        memcpy(data, faces.data(), size);
-        vkUnmapMemory(ctx->device, ssboMemory);
-    }
-
-    // ─────────────────────────────────────────
-    //  Descriptor Layout
-    // ─────────────────────────────────────────
 
     void createDescriptorSetLayout() {
         VkDescriptorSetLayoutBinding uboBinding{};
@@ -272,9 +214,9 @@ private:
         uboInfo.range  = sizeof(UniformBufferObject);
 
         VkDescriptorBufferInfo ssboInfo{};
-        ssboInfo.buffer = ssboBuffer;
+        ssboInfo.buffer = allocator.ssboBuffer;
         ssboInfo.offset = 0;
-        ssboInfo.range  = sizeof(uint32_t) * faces.size();
+        ssboInfo.range  = allocator.poolSize;
 
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -356,10 +298,6 @@ private:
             throw std::runtime_error("failed to create render pass");
     }
 
-    // ─────────────────────────────────────────
-    //  Pipeline — zero vertex input, chunk shaders
-    // ─────────────────────────────────────────
-
     void createPipeline() {
         auto vert = readFile("assets/shaders/chunk.vert.spv");
         auto frag = readFile("assets/shaders/chunk.frag.spv");
@@ -404,7 +342,7 @@ private:
         VkPipelineRasterizationStateCreateInfo raster{};
         raster.sType       = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         raster.polygonMode = VK_POLYGON_MODE_FILL;
-        raster.cullMode    = VK_CULL_MODE_NONE;
+        raster.cullMode    = VK_CULL_MODE_BACK_BIT;
         raster.frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         raster.lineWidth   = 1.0f;
 
@@ -483,20 +421,11 @@ private:
         }
     }
 
-    void createCommandPool() {
-        VkCommandPoolCreateInfo info{};
-        info.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        info.queueFamilyIndex = getGraphicsFamily();
-        info.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        if (vkCreateCommandPool(ctx->device, &info, nullptr, &commandPool) != VK_SUCCESS)
-            throw std::runtime_error("failed to create command pool");
-    }
-
     void createCommandBuffers() {
         commandBuffers.resize(framebuffers.size());
         VkCommandBufferAllocateInfo info{};
         info.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        info.commandPool        = commandPool;
+        info.commandPool        = commandManager.commandPool;
         info.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         info.commandBufferCount = (uint32_t)commandBuffers.size();
         if (vkAllocateCommandBuffers(ctx->device, &info, commandBuffers.data()) != VK_SUCCESS)
@@ -509,7 +438,7 @@ private:
         vkBeginCommandBuffer(cmd, &begin);
 
         VkClearValue clearValues[2]{};
-        clearValues[0].color        = {0.1f, 0.1f, 0.1f, 1.0f};
+        clearValues[0].color = {0.0f, 0.0f, 0.0f, 1.0f};
         clearValues[1].depthStencil = {1.0f, 0};
 
         VkRenderPassBeginInfo rpInfo{};
@@ -524,9 +453,10 @@ private:
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                         pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-
-        for (int i = 0; i < 3; i++) {
-            glm::mat4 chunkModel = glm::translate(glm::mat4(1.0f), glm::vec3((float)i * 16.0f, 0.0f, 0.0f));
+        
+        std::unordered_map<ChunkCoord, Chunk, ChunkCoordHash>& worldGrid = world.worldGrid;
+        for (const auto& [key, value] : worldGrid) {
+            glm::mat4 chunkModel = glm::translate(glm::mat4(1.0f), glm::vec3((float)key.x * 16.0f, 0.0f, (float)key.z * 16.0f));
             vkCmdPushConstants(
                 cmd,
                 pipelineLayout,
@@ -535,8 +465,10 @@ private:
                 sizeof(glm::mat4),
                 &chunkModel
             );
-            vkCmdDraw(cmd, static_cast<uint32_t>(faces.size() * 6), 1, 0, 0);
-        }   
+            uint32_t slotIndex = value.slot.slotOffset / sizeof(uint32_t);
+            vkCmdDraw(cmd, static_cast<uint32_t>(value.faces.size() * 6), 1, 0, slotIndex);
+        }
+
         vkCmdEndRenderPass(cmd);
         vkEndCommandBuffer(cmd);
     }
@@ -594,7 +526,7 @@ private:
         VkMemoryAllocateInfo allocInfo{};
         allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize  = memReqs.size;
-        allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, properties);
+        allocInfo.memoryTypeIndex = ctx->findMemoryType(memReqs.memoryTypeBits, properties);
         vkAllocateMemory(ctx->device, &allocInfo, nullptr, &memory);
         vkBindBufferMemory(ctx->device, buffer, memory, 0);
     }
@@ -632,7 +564,7 @@ private:
         VkMemoryAllocateInfo allocInfo{};
         allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize  = memReqs.size;
-        allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, properties);
+        allocInfo.memoryTypeIndex = ctx->findMemoryType(memReqs.memoryTypeBits, properties);
         vkAllocateMemory(ctx->device, &allocInfo, nullptr, &memory);
         vkBindImageMemory(ctx->device, image, memory, 0);
     }
@@ -679,45 +611,8 @@ private:
         vkFreeMemory(ctx->device, stagingMemory, nullptr);
     }
 
-    VkCommandBuffer beginOneShot() {
-        VkCommandBufferAllocateInfo info{};
-        info.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        info.commandPool        = commandPool;
-        info.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        info.commandBufferCount = 1;
-        VkCommandBuffer cmd;
-        vkAllocateCommandBuffers(ctx->device, &info, &cmd);
-        VkCommandBufferBeginInfo begin{};
-        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        vkBeginCommandBuffer(cmd, &begin);
-        return cmd;
-    }
-
-    void endOneShot(VkCommandBuffer cmd) {
-        vkEndCommandBuffer(cmd);
-        VkSubmitInfo submit{};
-        submit.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit.commandBufferCount = 1;
-        submit.pCommandBuffers    = &cmd;
-        vkQueueSubmit(ctx->graphicsQueue, 1, &submit, VK_NULL_HANDLE);
-        vkQueueWaitIdle(ctx->graphicsQueue);
-        vkFreeCommandBuffers(ctx->device, commandPool, 1, &cmd);
-    }
-
-    uint32_t getGraphicsFamily() {
-        uint32_t count = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(ctx->physicalDevice, &count, nullptr);
-        std::vector<VkQueueFamilyProperties> families(count);
-        vkGetPhysicalDeviceQueueFamilyProperties(ctx->physicalDevice, &count, families.data());
-        for (uint32_t i = 0; i < count; i++)
-            if (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
-                return i;
-        throw std::runtime_error("no graphics queue family");
-    }
-
     void transitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) {
-        VkCommandBuffer cmd = beginOneShot();
+        VkCommandBuffer cmd = commandManager.beginOneShot();
 
         VkImageMemoryBarrier barrier{};
         barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -746,11 +641,11 @@ private:
         }
 
         vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-        endOneShot(cmd);
+        commandManager.endOneShot(cmd);
     }
 
     void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t w, uint32_t h) {
-        VkCommandBuffer cmd = beginOneShot();
+        VkCommandBuffer cmd = commandManager.beginOneShot();
 
         VkBufferImageCopy region{};
         region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -759,7 +654,7 @@ private:
 
         vkCmdCopyBufferToImage(cmd, buffer, image,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-        endOneShot(cmd);
+        commandManager.endOneShot(cmd);
     }
 
     void createTextureImageView() {
@@ -783,16 +678,6 @@ private:
         info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         vkCreateSampler(ctx->device, &info, nullptr, &textureSampler);
-    }
-
-    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
-        VkPhysicalDeviceMemoryProperties memProps;
-        vkGetPhysicalDeviceMemoryProperties(ctx->physicalDevice, &memProps);
-        for (uint32_t i = 0; i < memProps.memoryTypeCount; i++)
-            if ((typeFilter & (1 << i)) &&
-                (memProps.memoryTypes[i].propertyFlags & properties) == properties)
-                return i;
-        throw std::runtime_error("failed to find suitable memory type");
     }
 
     VkShaderModule createShaderModule(const std::vector<char>& code) {

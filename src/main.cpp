@@ -12,6 +12,7 @@
 #include "vulkan/swapchain.hpp"
 #include "vulkan/renderer.hpp"
 #include "core/config.hpp"
+#include "camera.hpp"
 
 class Engine {
 public:
@@ -28,6 +29,7 @@ private:
     VulkanContext ctx;
     Swapchain swapchain;
     Renderer renderer;
+    Camera camera;
 
     void initWindow() {
         glfwInit();
@@ -35,17 +37,15 @@ private:
         glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
         window = glfwCreateWindow(WIDTH, HEIGHT, "coah-engine", nullptr, nullptr);
 
-        glfwSetWindowUserPointer(window, &renderer);
-        glfwSetCursorPosCallback(window, [](GLFWwindow* w, double x, double y) {
-            ((Renderer*)glfwGetWindowUserPointer(w))->mouseCallback(w, x, y);
-        });
+        glfwSetWindowUserPointer(window, this);
+        glfwSetCursorPosCallback(window, Engine::mouseCallback);
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     }
 
     void initVulkan() {
         ctx.init(window);
         swapchain.init(ctx);
-        renderer.init(&ctx, &swapchain);
+        renderer.init(&ctx, &swapchain, &camera);
     }
 
     void loop() {
@@ -56,11 +56,39 @@ private:
             lastTime = currentTime;
 
             glfwPollEvents();
-            renderer.processInput(window, dt);
+            camera.processInput(window, dt);
             renderer.updateUniformBuffer();
             renderer.drawFrame();
         }
         vkDeviceWaitIdle(ctx.device);
+    }
+
+    static void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
+        Engine* e = (Engine*)glfwGetWindowUserPointer(window);
+        Camera& cam = e->camera;
+
+        static float lastX = WIDTH / 2.0f;
+        static float lastY = HEIGHT / 2.0f;
+
+        if (cam.firstMouse) { 
+            lastX = xpos; 
+            lastY = ypos; 
+            cam.firstMouse = false; 
+        }
+
+        float dx = (xpos - lastX) * cam.sensitivity;
+        float dy = (lastY - ypos) * cam.sensitivity;
+        lastX = xpos; 
+        lastY = ypos;
+
+        cam.yaw   += dx;
+        cam.pitch  = glm::clamp(cam.pitch + dy, -89.0f, 89.0f);
+
+        cam.front = glm::normalize(glm::vec3(
+            cos(glm::radians(cam.yaw)) * cos(glm::radians(cam.pitch)),
+            sin(glm::radians(cam.pitch)),
+            sin(glm::radians(cam.yaw)) * cos(glm::radians(cam.pitch))
+        ));
     }
 
     void cleanup() {

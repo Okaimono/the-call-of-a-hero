@@ -21,11 +21,11 @@ build:
 shaders:
 	@for f in $(SHADER_DIR)/*.vert; do \
 		echo "compiling $$f"; \
-		glslc $$f -o $${f%.vert}.spv; \
+		glslc $$f -o $$f.spv; \
 	done
 	@for f in $(SHADER_DIR)/*.frag; do \
 		echo "compiling $$f"; \
-		glslc $$f -o $${f%.frag}.spv; \
+		glslc $$f -o $$f.spv; \
 	done
 
 play: build

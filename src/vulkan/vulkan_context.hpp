@@ -1,10 +1,5 @@
 #pragma once
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-
-#include <iostream>
-#include <vector>
-#include <stdexcept>
+#include "vulkan_includes.hpp"
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -35,7 +30,19 @@ public:
         createLogicalDevice();
     }
 
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+        VkPhysicalDeviceMemoryProperties memProps;
+        vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
+        for (uint32_t i = 0; i < memProps.memoryTypeCount; i++)
+            if ((typeFilter & (1 << i)) &&
+                (memProps.memoryTypes[i].propertyFlags & properties) == properties)
+                return i;
+        throw std::runtime_error("failed to find suitable memory type");
+    }
+
 private:
+    const bool useDiscreteGPU = true;
+
     void createInstance() {
         if (enableValidationLayers && !checkValidationLayers())
             throw std::runtime_error("validation layers not available");
@@ -77,17 +84,26 @@ private:
         std::vector<VkPhysicalDevice> devices(count);
         vkEnumeratePhysicalDevices(instance, &count, devices.data());
 
+        VkPhysicalDeviceType preferred = useDiscreteGPU 
+            ? VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU 
+            : VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+
         for (auto& d : devices) {
             VkPhysicalDeviceProperties props;
             vkGetPhysicalDeviceProperties(d, &props);
             std::cout << "found: " << props.deviceName << "\n";
-            if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+            if (props.deviceType == preferred) {
                 physicalDevice = d;
                 std::cout << "selected: " << props.deviceName << "\n";
                 return;
             }
         }
+
+        // fallback to whatever's available
         physicalDevice = devices[0];
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(physicalDevice, &props);
+        std::cout << "fallback selected: " << props.deviceName << "\n";
     }
 
     void createLogicalDevice() {
