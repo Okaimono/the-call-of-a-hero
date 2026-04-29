@@ -54,6 +54,20 @@ public:
         launchNoiseMap(20, 20, perlin.get());
     }
 
+    // void getRenderChunks(glm::vec3 position) {
+    //     for (int x = 0; x <= renderDist; x++) {
+    //         for (int z = 0; z <= renderDist; z++) {
+    //             if (x * x + z * z == renderDist * renderDist) {
+    //                 ChunkCoords coords = {x, z};
+    //                 auto it = worldGrid.find(coords);
+    //                 if (it != worldGrid.end()) {
+    //                     renderedChunks.push_back(coords);
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+
 };
 
 // each chunk has 16 x 16

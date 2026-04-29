@@ -7,7 +7,6 @@
 #include "core/config.hpp"
 #include "vulkan/command_manager.hpp"
 #include "vulkan/pool_allocator.hpp"
-#include "camera.hpp"
 #include "game/world.hpp"
 
 #include <functional>
@@ -16,20 +15,24 @@
 
 class Renderer {
 public:
-    void init(VulkanContext* ctx, Swapchain* swapchain, Camera* camera) {
+    PoolAllocator allocator;
+
+    void init(VulkanContext* ctx, Swapchain* swapchain) {
         this->ctx = ctx;
         this->swapchain = swapchain;
-        this->camera = camera;
 
         createRenderPass();
         allocator.init(ctx, &commandManager);
         createDescriptorSetLayout();
-        createPipeline();
+
+        createChunkPipeline();
+
+        createVertexBuffer();
+        createUiPipeline();
+
         createDepthResources();
         createFramebuffers();
         commandManager.init(ctx);
-        world.init();
-        createChunkSlots();
         createTextureImage();
         createTextureImageView();
         createSampler();
@@ -40,16 +43,14 @@ public:
         createSyncObjects();
     }
 
-    void updateUniformBuffer() {
+    void updateUniformBuffer(const glm::mat4& view, const glm::mat4& proj) {
         UniformBufferObject ubo{};
-        ubo.model = glm::mat4(1.0f);
-        ubo.view = glm::lookAt(camera->position, camera->position + camera->front, camera->up);
-        ubo.proj  = glm::perspective(glm::radians(60.0f), WIDTH / (float)HEIGHT, 0.1f, 1000.0f);
-        ubo.proj[1][1] *= -1;
+        ubo.view = view;
+        ubo.proj  = proj;
         memcpy(uniformMapped, &ubo, sizeof(ubo));
     }
 
-    void drawFrame() {
+    void drawFrame(World& world) {
         vkWaitForFences(ctx->device, 1, &inFlight, VK_TRUE, UINT64_MAX);
         vkResetFences(ctx->device, 1, &inFlight);
 
@@ -57,7 +58,7 @@ public:
         vkAcquireNextImageKHR(ctx->device, swapchain->swapchain, UINT64_MAX, imageAvailable, VK_NULL_HANDLE, &imageIndex);
 
         vkResetCommandBuffer(commandBuffers[imageIndex], 0);
-        recordCommandBuffer(commandBuffers[imageIndex], imageIndex);
+        recordCommandBuffer(commandBuffers[imageIndex], imageIndex, world);
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
@@ -110,11 +111,16 @@ private:
     VkRenderPass               renderPass     = VK_NULL_HANDLE;
     VkPipelineLayout           pipelineLayout = VK_NULL_HANDLE;
     VkPipeline                 pipeline       = VK_NULL_HANDLE;
+
+    VkPipelineLayout uiPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline uiPipeline = VK_NULL_HANDLE;
+
+    VkBuffer uiBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory uiMemory = VK_NULL_HANDLE;
+
     std::vector<VkFramebuffer> framebuffers;
     std::vector<VkCommandBuffer> commandBuffers;
     CommandManager commandManager;
-    PoolAllocator allocator;
-    World world;
 
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
     VkSemaphore renderFinished = VK_NULL_HANDLE;
@@ -139,20 +145,9 @@ private:
 
     VulkanContext* ctx      = nullptr;
     Swapchain*     swapchain = nullptr;
-    Camera*        camera    = nullptr;
 
     VkBuffer       texBuffer = VK_NULL_HANDLE;
     VkDeviceMemory texMemory = VK_NULL_HANDLE;
-
-    void createChunkSlots() {
-        std::unordered_map<ChunkCoord, Chunk, ChunkCoordHash>& worldGrid = world.worldGrid;
-        for (auto& [key, value] : worldGrid) {
-            value.slot = allocator.reserveSlot();
-            
-            const std::vector<uint32_t>& data = value.faces;
-            allocator.updateSlot(value.slot, data);
-        }
-    }
 
     void createDescriptorSetLayout() {
         VkDescriptorSetLayoutBinding uboBinding{};
@@ -298,7 +293,7 @@ private:
             throw std::runtime_error("failed to create render pass");
     }
 
-    void createPipeline() {
+    void createChunkPipeline() {
         auto vert = readFile("assets/shaders/chunk.vert.spv");
         auto frag = readFile("assets/shaders/chunk.frag.spv");
         VkShaderModule vertMod = createShaderModule(vert);
@@ -400,6 +395,145 @@ private:
         std::cout << "pipeline created\n";
     }
 
+    struct UiVertex {
+        glm::vec2 pos;
+    };
+
+    void createVertexBuffer() {
+        UiVertex positions[6] = {
+            {{-0.25f, -0.25f}},
+            {{ 0.25f, -0.25f}},
+            {{ 0.25f,  0.25f}},
+            {{-0.25f, -0.25f}},
+            {{ 0.25f,  0.25f}},
+            {{-0.25f,  0.25f}}
+        };
+
+        VkDeviceSize size = sizeof(positions);
+        createBuffer(size,
+                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     uiBuffer, uiMemory);
+        void* data;
+        vkMapMemory(ctx->device, uiMemory, 0, size, 0, &data);
+        memcpy(data, positions, size);
+        vkUnmapMemory(ctx->device, uiMemory);
+    }
+
+    void createUiPipeline() {
+        auto vert = readFile("assets/shaders/ui.vert.spv");
+        auto frag = readFile("assets/shaders/ui.frag.spv");
+        VkShaderModule vertMod = createShaderModule(vert);
+        VkShaderModule fragMod = createShaderModule(frag);
+
+        VkPipelineShaderStageCreateInfo stages[2]{};
+        stages[0].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        stages[0].stage  = VK_SHADER_STAGE_VERTEX_BIT;
+        stages[0].module = vertMod;
+        stages[0].pName  = "main";
+        stages[1].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        stages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+        stages[1].module = fragMod;
+        stages[1].pName  = "main";
+
+        // No vertex buffers — all geometry comes from SSBO
+        VkVertexInputBindingDescription binding{};
+        binding.binding = 0;
+        binding.stride = sizeof(UiVertex);
+        binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        VkVertexInputAttributeDescription attr{};
+        attr.binding = 0;
+        attr.location = 0;
+        attr.format   = VK_FORMAT_R32G32_SFLOAT;
+        attr.offset = 0;
+
+        VkPipelineVertexInputStateCreateInfo vertInput{};
+        vertInput.sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertInput.vertexBindingDescriptionCount   = 1;
+        vertInput.pVertexBindingDescriptions = &binding;
+        vertInput.vertexAttributeDescriptionCount = 1;
+        vertInput.pVertexAttributeDescriptions    = &attr;
+
+        VkPipelineInputAssemblyStateCreateInfo assembly{};
+        assembly.sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+        VkViewport viewport{};
+        viewport.width    = (float)swapchain->swapchainExtent.width;
+        viewport.height   = (float)swapchain->swapchainExtent.height;
+        viewport.maxDepth = 1.0f;
+
+        VkRect2D scissor{};
+        scissor.extent = swapchain->swapchainExtent;
+
+        VkPipelineViewportStateCreateInfo viewportState{};
+        viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportState.viewportCount = 1;
+        viewportState.pViewports    = &viewport;
+        viewportState.scissorCount  = 1;
+        viewportState.pScissors     = &scissor;
+
+        VkPipelineRasterizationStateCreateInfo raster{};
+        raster.sType       = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        raster.polygonMode = VK_POLYGON_MODE_FILL;
+        raster.cullMode    = VK_CULL_MODE_NONE;
+        raster.frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        raster.lineWidth   = 1.0f;
+
+        VkPipelineMultisampleStateCreateInfo ms{};
+        ms.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        VkPipelineDepthStencilStateCreateInfo depthStencil{};
+        depthStencil.sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencil.depthTestEnable  = VK_FALSE;
+        depthStencil.depthWriteEnable = VK_FALSE;
+        depthStencil.depthCompareOp   = VK_COMPARE_OP_LESS;
+
+        VkPipelineColorBlendAttachmentState blendAttach{};
+        blendAttach.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                     VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        blendAttach.blendEnable = VK_TRUE;
+        blendAttach.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        blendAttach.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blendAttach.colorBlendOp = VK_BLEND_OP_ADD;
+
+        VkPipelineColorBlendStateCreateInfo blend{};
+        blend.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        blend.attachmentCount = 1;
+        blend.pAttachments    = &blendAttach;
+
+        VkPipelineLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layoutInfo.setLayoutCount = 0;
+        layoutInfo.pSetLayouts    = nullptr;
+        layoutInfo.pushConstantRangeCount = 0;
+        layoutInfo.pPushConstantRanges    = nullptr;
+        vkCreatePipelineLayout(ctx->device, &layoutInfo, nullptr, &uiPipelineLayout);
+
+        VkGraphicsPipelineCreateInfo info{};
+        info.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        info.stageCount          = 2;
+        info.pStages             = stages;
+        info.pVertexInputState   = &vertInput;
+        info.pInputAssemblyState = &assembly;
+        info.pViewportState      = &viewportState;
+        info.pRasterizationState = &raster;
+        info.pDepthStencilState  = &depthStencil;
+        info.pMultisampleState   = &ms;
+        info.pColorBlendState    = &blend;
+        info.layout              = uiPipelineLayout;
+        info.renderPass          = renderPass;
+
+        if (vkCreateGraphicsPipelines(ctx->device, VK_NULL_HANDLE, 1, &info, nullptr, &uiPipeline) != VK_SUCCESS)
+            throw std::runtime_error("failed to create pipeline");
+
+        vkDestroyShaderModule(ctx->device, vertMod, nullptr);
+        vkDestroyShaderModule(ctx->device, fragMod, nullptr);
+        std::cout << "pipeline created\n";
+    }
+
     // ─────────────────────────────────────────
     //  Framebuffers / Commands / Sync
     // ─────────────────────────────────────────
@@ -432,7 +566,7 @@ private:
             throw std::runtime_error("failed to allocate command buffers");
     }
 
-    void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
+    void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, World& world) {
         VkCommandBufferBeginInfo begin{};
         begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         vkBeginCommandBuffer(cmd, &begin);
@@ -450,10 +584,17 @@ private:
         rpInfo.pClearValues      = clearValues;
 
         vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+        // Rendering chunk pipeline
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, uiPipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                         pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-        
+        VkBuffer bufs[] = {uiBuffer};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(cmd, 0, 1, bufs, offsets);
+        vkCmdDraw(cmd, 6, 1, 0, 0);
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         std::unordered_map<ChunkCoord, Chunk, ChunkCoordHash>& worldGrid = world.worldGrid;
         for (const auto& [key, value] : worldGrid) {
             glm::mat4 chunkModel = glm::translate(glm::mat4(1.0f), glm::vec3((float)key.x * 16.0f, 0.0f, (float)key.z * 16.0f));
@@ -468,6 +609,8 @@ private:
             uint32_t slotIndex = value.slot.slotOffset / sizeof(uint32_t);
             vkCmdDraw(cmd, static_cast<uint32_t>(value.faces.size() * 6), 1, 0, slotIndex);
         }
+
+        vkCmdDraw(cmd, 6, 1, 0, 0);
 
         vkCmdEndRenderPass(cmd);
         vkEndCommandBuffer(cmd);
