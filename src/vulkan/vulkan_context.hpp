@@ -1,5 +1,6 @@
 #pragma once
 #include "vulkan_includes.hpp"
+#include "core/config.hpp"
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -40,9 +41,16 @@ public:
         throw std::runtime_error("failed to find suitable memory type");
     }
 
-private:
-    const bool useDiscreteGPU = true;
+    template<typename Fn>
+    static void profile(const char* name, Fn fn) {
+        auto t0 = std::chrono::high_resolution_clock::now();
+        fn();
+        auto t1 = std::chrono::high_resolution_clock::now();
+        float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
+        printf("%s: %.3f ms\n", name, ms);
+    }
 
+private:
     void createInstance() {
         if (enableValidationLayers && !checkValidationLayers())
             throw std::runtime_error("validation layers not available");

@@ -7,10 +7,12 @@
 #include <stdexcept>
 #include <cstring>
 #include <chrono>
+#include <cstdio>
 
 #include "vulkan/vulkan_context.hpp"
 #include "vulkan/swapchain.hpp"
 #include "vulkan/renderer.hpp"
+#include "vulkan/renderer_resource_manager.hpp"
 #include "core/config.hpp"
 #include "game/coah.hpp"
 #include "coah_engine/input_manager.hpp"
@@ -33,6 +35,7 @@ private:
     Renderer renderer;
     CallOfAHero coah;
     InputManager inputManager;
+    RendererResourceManager rendererResourceManager;
 
     void initWindow() {
         glfwInit();
@@ -48,20 +51,31 @@ private:
     void initVulkan() {
         ctx.init(window);
         swapchain.init(ctx);
-        renderer.init(&ctx, &swapchain);
-        coah.init(&renderer);
+        rendererResourceManager.init(&ctx, &swapchain);
+        renderer.init(&ctx, &swapchain, &rendererResourceManager);
+        coah.init(&renderer, &rendererResourceManager);
     }
 
     void loop() {
         float lastTime = 0.0f;
+        static float tickTime = 0.0f;
         while (!glfwWindowShouldClose(window)) {
             float currentTime = glfwGetTime();
             float dt = currentTime - lastTime;
+            tickTime += dt;
             lastTime = currentTime;
 
+            if (tickTime >= 1.0f / 60.0f) {
+                coah.tick(1.0f / 60.0f);
+                tickTime -= 1.0f / 60.0f;
+            }
+
             glfwPollEvents();
+
             coah.update(&inputManager, dt);
-            coah.render();
+
+            VulkanContext::profile("coah.render()", [&]() {coah.render();});
+
         }
         vkDeviceWaitIdle(ctx.device);
     }
@@ -74,6 +88,8 @@ private:
     void cleanup() {
         renderer.cleanup();
         swapchain.cleanup(ctx);
+        rendererResourceManager.cleanup();
+
         glfwDestroyWindow(window);
         glfwTerminate();
     }

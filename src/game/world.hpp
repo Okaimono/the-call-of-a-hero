@@ -34,6 +34,10 @@ public:
 
     const int renderDist = 4;
 
+    void update(glm::vec3 playerPos) {
+        getRenderedChunks(playerPos);
+    }
+
     void init() {
         generatePerlin();
         //launchNoiseMap(-5, 5, -5, 5, (float*)noise);
@@ -54,19 +58,24 @@ public:
         launchNoiseMap(20, 20, perlin.get());
     }
 
-    // void getRenderChunks(glm::vec3 position) {
-    //     for (int x = 0; x <= renderDist; x++) {
-    //         for (int z = 0; z <= renderDist; z++) {
-    //             if (x * x + z * z == renderDist * renderDist) {
-    //                 ChunkCoords coords = {x, z};
-    //                 auto it = worldGrid.find(coords);
-    //                 if (it != worldGrid.end()) {
-    //                     renderedChunks.push_back(coords);
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
+    void getRenderedChunks(glm::vec3 position) {
+        renderedChunks.clear();
+        for (int x = -renderDist; x <= renderDist; x++) {
+            for (int z = -renderDist; z <= renderDist; z++) {
+                if (x * x + z * z <= renderDist * renderDist) {
+
+                    int playerChunkX = (int)floor(position.x / 16.0f);
+                    int playerChunkZ = (int)floor(position.z / 16.0f);
+
+                    ChunkCoord coords = {x + playerChunkX, z + playerChunkZ};
+                    auto it = worldGrid.find(coords);
+                    if (it != worldGrid.end()) {
+                        renderedChunks.push_back(coords);
+                    }
+                }
+            }
+        }
+    }
 
 };
 

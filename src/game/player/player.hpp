@@ -1,11 +1,14 @@
 #pragma once
 #include "vulkan_includes.hpp"
 #include "coah_engine/input_manager.hpp"
+
 #include <glm/gtc/matrix_transform.hpp>
 
 class Player {
 public:
-    glm::vec3 position    = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 position    = glm::vec3(0.0f, 60.0f, 0.0f);
+    glm::vec3 velocity    = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 acceleration = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 orientation = glm::vec3(0.0f, 0.0f, -1.0f);
     glm::vec3 up          = glm::vec3(0.0f, 1.0f, 0.0f);
     float speed       = 20.0f;
@@ -46,6 +49,10 @@ public:
             sin(glm::radians(pitch)),
             sin(glm::radians(yaw)) * cos(glm::radians(pitch))
         ));
+    }
+
+    glm::vec3 getPosition() {
+        return position;
     }
 
     glm::mat4 getViewMatrix() {
