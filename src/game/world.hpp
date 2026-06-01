@@ -28,11 +28,14 @@ extern "C" void launchNoiseMap(int x, int z, PerlinChunk* chunks);
 
 class World {
 public:
-    std::unordered_map<ChunkCoord, Chunk, ChunkCoordHash> worldGrid;
+    std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoordHash> worldGrid;
     std::unique_ptr<PerlinChunk[]> perlin;
     std::vector<ChunkCoord> renderedChunks;
 
-    const int renderDist = 4;
+    const int renderDist = 100;
+
+    int worldLength = 30;
+    int worldDepth = 30;
 
     void update(glm::vec3 playerPos) {
         getRenderedChunks(playerPos);
@@ -41,21 +44,21 @@ public:
     void init() {
         generatePerlin();
         //launchNoiseMap(-5, 5, -5, 5, (float*)noise);
-        for (int x = -10; x < 10; x++) {
-            for (int z = -10; z < 10; z++) {
-                worldGrid[{x, z}] = Chunk(x, z, (float*)perlin[(x + 10) * 20 + (z + 10)].noise);
+        for (int x = -worldLength / 2; x < worldLength / 2; x++) {
+            for (int z = -worldDepth / 2; z < worldDepth / 2; z++) {
+                worldGrid[{x, z}] = std::make_unique<Chunk>(x, z, (float*)perlin[(x + worldLength / 2) * worldDepth + (z + worldDepth / 2)].noise);
             }
         }
     }
 
     void generatePerlin() {
-        perlin = std::make_unique<PerlinChunk[]>(20 * 20);
-        for (int x = -10; x < 10; x++) {
-            for (int z = -10; z < 10; z++) {
-                perlin[(x + 10) * 20 + (z + 10)].coord = {x, z};
+        perlin = std::make_unique<PerlinChunk[]>(worldLength * worldDepth);
+        for (int x = -worldLength / 2; x < worldLength / 2; x++) {
+            for (int z = -worldDepth / 2; z < worldDepth / 2; z++) {
+                perlin[(x + worldLength / 2) * worldDepth + (z + worldDepth / 2)].coord = {x, z};
             }
         }
-        launchNoiseMap(20, 20, perlin.get());
+        launchNoiseMap(worldLength, worldDepth, perlin.get());
     }
 
     void getRenderedChunks(glm::vec3 position) {

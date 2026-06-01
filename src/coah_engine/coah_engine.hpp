@@ -74,7 +74,8 @@ private:
 
             coah.update(&inputManager, dt);
 
-            VulkanContext::profile("coah.render()", [&]() {coah.render();});
+            //VulkanContext::profile("coah.render()", [&]() {coah.render();});
+            coah.render();
 
         }
         vkDeviceWaitIdle(ctx.device);

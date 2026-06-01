@@ -22,12 +22,20 @@ struct RenderQueue {
     void flush(VkCommandBuffer cmd) {
         VkPipeline lastPipeline = VK_NULL_HANDLE;
         VkDescriptorSet lastDescriptorSet = VK_NULL_HANDLE;
+        VkPipelineLayout lastLayout = VK_NULL_HANDLE;
         VkBuffer lastVertexBuffer = VK_NULL_HANDLE;
 
         for (auto& call : calls) {
             if (call.pipeline != lastPipeline) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, call.pipeline);
                 lastPipeline = call.pipeline;
+            }
+            if (call.descriptorSet != VK_NULL_HANDLE && 
+                (call.descriptorSet != lastDescriptorSet || call.layout != lastLayout)) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    call.layout, 0, 1, &call.descriptorSet, 0, nullptr);
+                lastDescriptorSet = call.descriptorSet;
+                lastLayout = call.layout;
             }
             if (call.descriptorSet != VK_NULL_HANDLE && call.descriptorSet != lastDescriptorSet) {
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,

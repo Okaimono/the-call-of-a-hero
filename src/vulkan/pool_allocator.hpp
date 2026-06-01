@@ -12,10 +12,14 @@ struct Slot {
 
 class PoolAllocator {
 public:
-    static constexpr VkDeviceSize poolSize = 256 << 20;
+    static constexpr VkDeviceSize ssboPoolSize = 2ULL << 30;
+    static constexpr VkDeviceSize vboPoolSize = 256 << 20;
 
     VkBuffer ssboBuffer = VK_NULL_HANDLE;
     VkDeviceMemory ssboMemory = VK_NULL_HANDLE;
+
+    VkBuffer vboBuffer = VK_NULL_HANDLE;
+    VkBuffer vboMemory = VK_NULL_HANDLE;
 
     void init(VulkanContext* ctx, CommandManager* commandManager) {
         this->ctx = ctx;
@@ -69,7 +73,7 @@ private:
     VkDeviceSize ssboOffset = 0;
 
     void createSSBO() {
-        createBuffer(poolSize,
+        createBuffer(ssboPoolSize,
             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             ssboBuffer, ssboMemory);

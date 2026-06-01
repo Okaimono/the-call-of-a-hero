@@ -39,10 +39,8 @@ public:
     std::vector<Segment> segments;
     Head head;
 
-
     // Velocity of the head of basilisk
     glm::vec3 headVelocity = glm::vec3(2.0f, 0.0f, 2.0f);
-
 
     glm::vec3 segmentDist = glm::vec3(1.0f, 0.0f, 0.0f);
 
@@ -202,6 +200,15 @@ public:
         blackBlocks.blocks.push_back(glm::vec3(1.0f, 3.0f, 1.0f));
         blackBlocks.blocks.push_back(glm::vec3(2.0f, 3.0f, 2.0f));
         blackBlocks.blocks.push_back(glm::vec3(3.0f, 3.0f, 3.0f));
+
+        // Right/left face
+        blackBlocks.blocks.push_back(glm::vec3(-5.0f, 3.0f, 4.0f));
+        blackBlocks.blocks.push_back(glm::vec3(-5.0f, 2.0f, 4.0f));
+        blackBlocks.blocks.push_back(glm::vec3(-5.0f, 1.0f, 4.0f));
+
+        blackBlocks.blocks.push_back(glm::vec3(5.0f, 3.0f, 4.0f));
+        blackBlocks.blocks.push_back(glm::vec3(5.0f, 2.0f, 4.0f));
+        blackBlocks.blocks.push_back(glm::vec3(5.0f, 1.0f, 4.0f));
 
         for (float i = -2; i <= 2; i++) {
             blackBlocks.blocks.push_back(glm::vec3(i, 3.0f, 2.0f));

@@ -215,7 +215,7 @@ public:
         VkDescriptorBufferInfo ssboInfo{};
         ssboInfo.buffer = allocator.ssboBuffer;
         ssboInfo.offset = 0;
-        ssboInfo.range  = allocator.poolSize;
+        ssboInfo.range  = allocator.ssboPoolSize;
 
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -416,75 +416,10 @@ public:
 
         vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        drawUI(cmd);
-        drawChunks(cmd, world);
-        //drawBasilisk(cmd, basilisk);
-
-
-        // // Flush
-        // for (auto& call : renderQueue.calls) {
-        //     if (call.pipeline != lastPipeline) {
-        //         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, call.pipeline);
-        //         lastPipeline = call.pipeline;
-        //     }
-        //     if (call.descriptorSet != VK_NULL_HANDLE && call.descriptorSet != lastDescriptorSet) {
-        //         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        //             call.layout, 0, 1, &call.descriptorSet, 0, nullptr);
-        //         lastDescriptorSet = call.descriptorSet;
-        //     }
-        //     if (call.vertexBuffer != VK_NULL_HANDLE && call.vertexBuffer != lastVertexBuffer) {
-        //         VkDeviceSize offset = 0;
-        //         vkCmdBindVertexBuffers(cmd, 0, 1, &call.vertexBuffer, &offset);
-        //         lastVertexBuffer = call.vertexBuffer;
-        //     }
-        //     if (call.pushConstant) {
-        //         vkCmdPushConstants(cmd, call.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, call.pushSize, call.pushData);
-        //     }
-        //     vkCmdDraw(cmd, call.vertexCount, 1, 0, call.firstVertex);
-
-        // }
-
         renderQueue.flush(cmd);
 
         vkCmdEndRenderPass(cmd);
         vkEndCommandBuffer(cmd);
-    }
-
-    void drawChunks(VkCommandBuffer cmd, World& world) {
-        GfxPipeline& p = resources->getPipeline(chunkPipelineId);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                p.layout, 0, 1, &descriptorSet, 0, nullptr);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p.pipeline);
-
-        auto& worldGrid = world.worldGrid;
-
-        for (const auto& key : world.renderedChunks) {
-            auto it = worldGrid.find(key);
-            if (it != worldGrid.end()) {
-                Chunk* value = &it->second;
-                glm::mat4 chunkModel = glm::translate(glm::mat4(1.0f), glm::vec3((float)key.x * 16.0f, 0.0f, (float)key.z * 16.0f));
-                vkCmdPushConstants(
-                    cmd,
-                    p.layout,
-                    VK_SHADER_STAGE_VERTEX_BIT,
-                    0,
-                    sizeof(glm::mat4),
-                    &chunkModel
-                );
-                uint32_t slotIndex = value->slot.slotOffset / sizeof(uint32_t);
-                vkCmdDraw(cmd, static_cast<uint32_t>(value->faces.size() * 6), 1, 0, slotIndex);
-            }
-        }
-    }
-
-    void drawUI(VkCommandBuffer cmd) {
-        GfxPipeline& p = resources->getPipeline(uiPipelineId);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p.pipeline);
-        VkBuffer bufs[] = {uiBuffer};
-        VkDeviceSize offsets[] = {0};
-        vkCmdBindVertexBuffers(cmd, 0, 1, bufs, offsets);
-        vkCmdDraw(cmd, 6, 1, 0, 0);
-
     }
 
     void createSyncObjects() {
