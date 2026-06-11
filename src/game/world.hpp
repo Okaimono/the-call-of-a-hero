@@ -34,8 +34,8 @@ public:
 
     const int renderDist = 100;
 
-    int worldLength = 30;
-    int worldDepth = 30;
+    int worldLength = 10;
+    int worldDepth = 10;
 
     void update(glm::vec3 playerPos) {
         getRenderedChunks(playerPos);
@@ -43,10 +43,11 @@ public:
 
     void init() {
         generatePerlin();
-        //launchNoiseMap(-5, 5, -5, 5, (float*)noise);
         for (int x = -worldLength / 2; x < worldLength / 2; x++) {
             for (int z = -worldDepth / 2; z < worldDepth / 2; z++) {
-                worldGrid[{x, z}] = std::make_unique<Chunk>(x, z, (float*)perlin[(x + worldLength / 2) * worldDepth + (z + worldDepth / 2)].noise);
+                worldGrid[{x, z}] = std::make_unique<Chunk>();
+                worldGrid[{x, z}]->initFlat(x, z);
+                //worldGrid[{x, z}]->initPerlin(x, z, (float*)perlin[(x + worldLength / 2) * worldDepth + (z + worldDepth / 2)].noise);
             }
         }
     }

@@ -1,8 +1,8 @@
 #pragma once
 #include "vulkan/renderer.hpp"
 #include "vulkan/renderer_resource_manager.hpp"
-#include <functional>
 
+#include <functional>
 #include <cstdio>
 #include <math.h>
 #include <cmath>
@@ -26,6 +26,10 @@ struct Head {
     std::vector<Segment> headSegments;
 };
 
+/*
+d/dx 
+*/
+
 class Basilisk {
 public:
     Renderer* renderer = nullptr;
@@ -40,57 +44,24 @@ public:
     Head head;
 
     // Velocity of the head of basilisk
+    glm::vec3 spawnPos = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 headVelocity = glm::vec3(2.0f, 0.0f, 2.0f);
 
     glm::vec3 segmentDist = glm::vec3(1.0f, 0.0f, 0.0f);
+
 
     void init(Renderer* renderer, RendererResourceManager* rResourceManager) {
         this->renderer = renderer;
         this->rResourceManager = rResourceManager;
         initPipeline();
-        createHead();
         createBody();
         createVertexBuffer();
     }
 
-    void initPipeline() {
-        PipelineCreateInfo info{};
-        info.vertPath = "assets/shaders/basilisk.vert.spv";
-        info.fragPath = "assets/shaders/basilisk.frag.spv";
-
-        info.depthTest = true;
-        info.depthWrite = true;
-        info.blend = false;
-        info.cullMode = VK_CULL_MODE_NONE;
-
-        VkVertexInputBindingDescription binding{};
-        binding.binding   = 0;
-        binding.stride    = sizeof(BasiliskVertex);
-        binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-        VkVertexInputAttributeDescription attr{};
-        attr.binding  = 0;
-        attr.location = 0;
-        attr.format = VK_FORMAT_R32G32B32_SFLOAT; // vec3 not vec2
-        attr.offset   = 0;
-        
-        info.binding = &binding;
-        info.attr = &attr;
-        info.attrCount = 1;
-
-        info.setLayoutCount = 1;
-        info.setLayout = &renderer->descriptorSetLayout;
-
-        info.pushSize = sizeof(BasiliskPush);
-        info.renderPass = renderer->renderPass;
-
-        gfxPipeline = rResourceManager->createGfxPipeline(info);
-    }
-
     void update(float dt, const glm::vec3& playerPos) {
-        updateVelocity(dt);
+        //updateVelocity(dt);
         updatePos(dt);
-        rotateToPlayer(dt, playerPos);
+        //rotateToPlayer(dt, playerPos);
     }
 
     void updateVelocity(float dt) {
@@ -134,6 +105,7 @@ public:
             // Distance between the segment and segment in front of it
             
             glm::vec3 dist = segments[i - 1].pos - segments[i].pos;
+
             glm::vec3 move = glm::normalize(dist);
             segments[i].pos = segments[i - 1].pos - move;
 
@@ -155,6 +127,18 @@ public:
             // 4. Apply Pitch (Rotation around the LOCAL X-axis)
             model = glm::rotate(model, -pitch, glm::vec3(1.0f, 0.0f, 0.0f));
             segments[i].push.model = model;
+        }
+    }
+
+    void createBody() {
+        Segment head;
+        head.pos = spawnPos;
+        segments.push_back(head);
+        for (int i = 0; i < 10; i++) {
+            Segment segment;
+
+            segment.pos = segments.back().pos + segmentDist;
+            segments.push_back(segment);
         }
     }
 
@@ -253,16 +237,38 @@ public:
         }
     }
 
-    void createBody() {
-        Segment head;
-        head.pos = glm::vec3(0.0f, 35.0f, 0.0f);
-        segments.push_back(head);
-        for (int i = 0; i < 10; i++) {
-            Segment segment;
+    void initPipeline() {
+        PipelineCreateInfo info{};
+        info.vertPath = "assets/shaders/basilisk.vert.spv";
+        info.fragPath = "assets/shaders/basilisk.frag.spv";
 
-            segment.pos = segments.back().pos + segmentDist;
-            segments.push_back(segment);
-        }
+        info.depthTest = true;
+        info.depthWrite = true;
+        info.blend = false;
+        info.cullMode = VK_CULL_MODE_NONE;
+
+        VkVertexInputBindingDescription binding{};
+        binding.binding   = 0;
+        binding.stride    = sizeof(BasiliskVertex);
+        binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        VkVertexInputAttributeDescription attr{};
+        attr.binding  = 0;
+        attr.location = 0;
+        attr.format = VK_FORMAT_R32G32B32_SFLOAT; // vec3 not vec2
+        attr.offset   = 0;
+        
+        info.binding = &binding;
+        info.attr = &attr;
+        info.attrCount = 1;
+
+        info.setLayoutCount = 1;
+        info.setLayout = &renderer->descriptorSetLayout;
+
+        info.pushSize = sizeof(BasiliskPush);
+        info.renderPass = renderer->renderPass;
+
+        gfxPipeline = rResourceManager->createGfxPipeline(info);
     }
 
     void createVertexBuffer() {

@@ -39,7 +39,28 @@ public:
 
     Chunk() {}
 
-    Chunk(int chunkX, int chunkZ, float* noise) {
+    void initFlat(int chunkX, int chunkZ) {
+        for (int x = 0; x < 16; x++) {
+            for (int z = 0; z < 16; z++) {
+                for (int y = 0; y < height; y++) {
+                    if (y == 0) {
+                        blocks[x][y][z] = COBBLESTONE;
+                    } else if (y <= 5 && y >= 1) {
+                        blocks[x][y][z] = DIRT;
+                    }
+                    else if (y == 6) {
+                        blocks[x][y][z] = GRASS;
+                    }
+                    else {
+                        blocks[x][y][z] = AIR;
+                    }
+                }
+            }
+        }
+        buildMesh();
+    }
+
+    void initPerlin(int chunkX, int chunkZ, float* noise) {
         for (int x = 0; x < 16; x++) {
             for (int z = 0; z < 16; z++) {
 

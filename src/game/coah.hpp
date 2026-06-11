@@ -5,8 +5,7 @@
 #include "game/basilisk/basilisk.hpp"
 #include "game/physics/physics_engine.hpp"
 #include "game/ui/ui.hpp"
-
-#include <functional>
+#include "game/basilisk/arena.hpp"
 
 class CallOfAHero {
 public:
@@ -14,6 +13,7 @@ public:
     Player player;
     Basilisk basilisk;
     UI ui;
+    Arena bossArena;
 
     PhysicsEngine physicsEngine;
 
@@ -27,17 +27,24 @@ public:
         basilisk.init(renderer, rResourceManager);
         ui.init(renderer);
         createChunkSlots();
+
+        bossArena.init(&player, &basilisk, renderer);
+        bossArena.begin();
     }
 
     void update(InputManager* inputManager, float dt) {
         player.processInput(inputManager, dt);
         basilisk.update(dt, player.position);
         world.update(player.getPosition());
+
     }
 
     void tick(float dt) {
-        //physicsEngine.update(dt, player.position, player.velocity, player.acceleration);
+        //.update(dt, player.position, player.velocity, player.acceleration);
 
+        if (bossArena.active) {
+            bossArena.tick(dt);
+        }
     }
 
     void render() {
@@ -46,16 +53,11 @@ public:
         renderer->updateUniformBuffer(view, proj);
 
         RenderQueue renderQueue{};
-        submitCalls(renderQueue);
-
-        renderer->drawFrame(world, renderQueue);
-
-    }
-
-    void submitCalls(RenderQueue& renderQueue) {
-        submitUI(renderQueue);
+        //submitUI(renderQueue);
         submitChunks(renderQueue);
         submitBasilisk(renderQueue);
+
+        renderer->drawFrame(world, renderQueue);
     }
 
     void submitUI(RenderQueue& renderQueue) {
@@ -118,19 +120,38 @@ public:
             renderQueue.push(call);
         }
 
-        for (auto& segment : basilisk.head.headSegments) {
-            DrawCall call{};
-            call.pipeline = baskPipeline.pipeline;
-            call.layout = baskPipeline.layout;
-            call.descriptorSet = renderer->descriptorSet;
-            call.vertexBuffer = basilisk.buffer;
-            call.pushConstant = true;
-            call.pushSize = pushSize;
-            call.pushData = &segment.push;
-            call.vertexCount = 36;
-            call.firstVertex = 0;
-            renderQueue.push(call);
-        }
+        // THIS IS FOR THE HEAD, CURRENTLY NOT USED
+
+        // for (auto& segment : basilisk.head.headSegments) {
+        //     DrawCall call{};
+        //     call.pipeline = baskPipeline.pipeline;
+        //     call.layout = baskPipeline.layout;
+        //     call.descriptorSet = renderer->descriptorSet;
+        //     call.vertexBuffer = basilisk.buffer;
+        //     call.pushConstant = true;
+        //     call.pushSize = pushSize;
+        //     call.pushData = &segment.push;
+        //     call.vertexCount = 36;
+        //     call.firstVertex = 0;
+        //     renderQueue.push(call);
+        // }
+
+        // THIS IS FOR THE TOWER, CURRENTLY NOT IN USE
+
+        // Tower& tower = bossArena.tower;
+        // Segment& segment = bossArena.tower.towerSegment;
+
+        // DrawCall call{};
+        // call.pipeline = baskPipeline.pipeline;
+        // call.layout = baskPipeline.layout;
+        // call.descriptorSet = renderer->descriptorSet;
+        // call.vertexBuffer = tower.buffer;
+        // call.pushConstant = true;
+        // call.pushSize = pushSize;
+        // call.pushData = &segment.push;
+        // call.vertexCount = 36;
+        // call.firstVertex = 0;
+        // renderQueue.push(call);
     }
 
     void createChunkSlots() {
